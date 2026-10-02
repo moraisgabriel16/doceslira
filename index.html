@@ -33,8 +33,8 @@ dialog{border:0;border-radius:22px;background:var(--bg);color:var(--ink);width:m
 dialog::backdrop{background:#0008}
 dialog h3{font-family:Sacramento,cursive;font-weight:400;font-size:2.4rem;margin:0 0 10px}
 .lines{margin:0 0 14px;padding:0;list-style:none}
-.lines li{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px dashed var(--line)}
-.lines li.desc{color:var(--ok);font-weight:500}
+.lines li{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px dashed var(--line)}
+.lines li.grupo{color:var(--ok);font-weight:500}
 .total{display:flex;justify-content:space-between;font-weight:600;font-size:1.15rem;margin-bottom:6px}
 .aviso{font-size:.85rem;color:var(--muted);margin:0 0 8px}
 label{display:block;font-size:.9rem;color:var(--muted);margin:10px 0 4px}
@@ -86,7 +86,8 @@ footer{text-align:center;color:var(--muted);font-size:.85rem;padding:26px 0}
 <script>
 const WHATS = "5511962983072";
 
-// promo: a cada "qtd" unidades da categoria (sabores misturados), paga-se "preco"
+// promo: a cada grupo fechado de "qtd" unidades (sabores misturados) paga-se "preco".
+// Não é cumulativo: cada grupo vale sempre o mesmo preço. O que sobra paga preço normal.
 const MENU = [
   {cat:"Trufas", tipo:"Trufa", promo:{qtd:3, preco:15},
    items:[["Maracujá trufado",6],["Brigadeiro",6],["Prestígio",6],["Mousse de limão",6],["Surpresa de uva",6.5],["Oreo",6]]},
@@ -132,31 +133,28 @@ menuEl.addEventListener("click", e=>{
   render();
 });
 
-// Regra de negócio: aplica a promoção por categoria, misturando sabores.
-// Os grupos completos são formados pelas unidades de maior preço (mais vantajoso ao cliente).
+// Cálculo por categoria:
+// grupos = floor(unidades / qtd)  → cada grupo custa promo.preco
+// sobra  = unidades % qtd         → cada unidade paga o preço normal
 function calcular(){
-  let original = 0, total = 0, itens = 0;
-  const promos = [];
+  let total = 0, itens = 0;
+  const cats = [];
   MENU.forEach((g,gi)=>{
     const unidades = [];
     flat.filter(i=>i.gi===gi).forEach(i=>{
       for(let k=0;k<(cart[i.id]||0);k++) unidades.push(i.price);
     });
-    unidades.sort((a,b)=>b-a);
+    unidades.sort((a,b)=>b-a);                 // as de maior valor entram nos grupos (favorece o cliente)
     const n = unidades.length;
     const grupos = Math.floor(n / g.promo.qtd);
-    const emGrupo = unidades.slice(0, grupos*g.promo.qtd);
-    const resto = unidades.slice(grupos*g.promo.qtd);
-    const somaGrupo = emGrupo.reduce((a,b)=>a+b,0);
-    const somaResto = resto.reduce((a,b)=>a+b,0);
-    const subOriginal = somaGrupo + somaResto;
-    const subFinal = grupos*g.promo.preco + somaResto;
-    original += subOriginal;
-    total += subFinal;
+    const resto = unidades.slice(grupos * g.promo.qtd);
+    const valorGrupos = grupos * g.promo.preco;
+    const valorResto = resto.reduce((a,b)=>a+b,0);
+    total += valorGrupos + valorResto;
     itens += n;
-    if(grupos) promos.push({gi, grupos, economia: somaGrupo - grupos*g.promo.preco});
+    cats.push({gi, n, grupos, sobra: resto.length, valorGrupos, valorResto});
   });
-  return {original, total, itens, promos};
+  return {total, itens, cats};
 }
 
 function render(){
@@ -171,11 +169,11 @@ function render(){
   const r = calcular();
 
   MENU.forEach((g,gi)=>{
-    const n = flat.filter(i=>i.gi===gi).reduce((a,i)=>a+(cart[i.id]||0),0);
-    const falta = (g.promo.qtd - n % g.promo.qtd) % g.promo.qtd;
-    const base = `Promoção: ${g.promo.qtd} por ${brl(g.promo.preco)} (sabores misturados)`;
+    const c = r.cats[gi];
+    const base = `Promoção: a cada ${g.promo.qtd} por ${brl(g.promo.preco)} (sabores misturados)`;
+    const falta = c.sobra ? g.promo.qtd - c.sobra : 0;
     document.getElementById("promo"+gi).textContent =
-      n && falta ? `${base}. Falta ${falta} para completar!` : base;
+      falta ? `${base}. Falta ${falta} para fechar mais um grupo!` : base;
   });
 
   document.getElementById("open").disabled = !r.itens;
@@ -193,21 +191,23 @@ document.getElementById("open").onclick = ()=>{
   flat.filter(i=>cart[i.id]).forEach(i=>{
     const li = document.createElement("li");
     li.textContent = `${cart[i.id]}x ${i.name} (${i.tipo})`;
-    const s = document.createElement("span");
-    s.textContent = brl(cart[i.id]*i.price);
-    li.appendChild(s);
     ul.appendChild(li);
   });
 
-  r.promos.forEach(p=>{
-    const g = MENU[p.gi];
-    const li = document.createElement("li");
-    li.className = "desc";
-    li.textContent = `Promoção ${g.promo.qtd} ${g.cat.toLowerCase()} por ${brl(g.promo.preco)} (${p.grupos}x)`;
-    const s = document.createElement("span");
-    s.textContent = "−" + brl(p.economia);
-    li.appendChild(s);
-    ul.appendChild(li);
+  r.cats.forEach(c=>{
+    if(!c.n) return;
+    const g = MENU[c.gi];
+    if(c.grupos){
+      const li = document.createElement("li");
+      li.className = "grupo";
+      li.innerHTML = `<span>${c.grupos}x promoção ${g.promo.qtd} ${g.cat.toLowerCase()} por ${brl(g.promo.preco)}</span><span>${brl(c.valorGrupos)}</span>`;
+      ul.appendChild(li);
+    }
+    if(c.sobra){
+      const li = document.createElement("li");
+      li.innerHTML = `<span>${c.sobra} ${g.cat.toLowerCase()} avulsa${c.sobra>1?"s":""}</span><span>${brl(c.valorResto)}</span>`;
+      ul.appendChild(li);
+    }
   });
 
   document.getElementById("total").textContent = brl(r.total);
@@ -225,19 +225,23 @@ document.getElementById("send").onclick = ()=>{
   if(!end.value.trim())  { end.focus();  return; }
 
   const r = calcular();
-  const linhas = flat.filter(i=>cart[i.id]).map(i=>
-    `• ${cart[i.id]}x ${i.name} (${i.tipo}) – ${brl(cart[i.id]*i.price)}`);
+  const itens = flat.filter(i=>cart[i.id]).map(i=>`• ${cart[i.id]}x ${i.name} (${i.tipo})`);
 
-  const descontos = r.promos.map(p=>{
-    const g = MENU[p.gi];
-    return `🎉 Promoção ${g.promo.qtd} ${g.cat.toLowerCase()} por ${brl(g.promo.preco)} (${p.grupos}x): −${brl(p.economia)}`;
+  const valores = [];
+  r.cats.forEach(c=>{
+    if(!c.n) return;
+    const g = MENU[c.gi];
+    if(c.grupos) valores.push(`🎉 ${c.grupos}x promoção ${g.promo.qtd} ${g.cat.toLowerCase()} por ${brl(g.promo.preco)} = ${brl(c.valorGrupos)}`);
+    if(c.sobra)  valores.push(`${c.sobra} ${g.cat.toLowerCase()} avulsa${c.sobra>1?"s":""} = ${brl(c.valorResto)}`);
   });
 
   const msg =
 `Olá, Doces Lira! Gostaria de fazer um pedido:
 
-${linhas.join("\n")}
-` + (descontos.length ? `\n${descontos.join("\n")}\n` : "") + `
+${itens.join("\n")}
+
+${valores.join("\n")}
+
 *Total dos doces: ${brl(r.total)}* (frete a combinar)
 
 Nome: ${nome.value.trim()}

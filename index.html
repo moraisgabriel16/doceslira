@@ -6,8 +6,8 @@
 <title>Doces Lira – Faça seu pedido</title>
 <link href="https://fonts.googleapis.com/css2?family=Sacramento&family=Outfit:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#fff0f4;--card:#fff;--ink:#4a2318;--muted:#8a6a62;--pink:#f9c6d6;--rose:#d9809f;--line:#f0d3dc}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#2a1612;--card:#3a201a;--ink:#ffe9ef;--muted:#d1aab4;--pink:#6b3446;--rose:#f2a3bd;--line:#55302b}}
+:root{--bg:#fff0f4;--card:#fff;--ink:#4a2318;--muted:#8a6a62;--pink:#f9c6d6;--rose:#d9809f;--line:#f0d3dc;--ok:#1e7d3a}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#2a1612;--card:#3a201a;--ink:#ffe9ef;--muted:#d1aab4;--pink:#6b3446;--rose:#f2a3bd;--line:#55302b;--ok:#7be0a0}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:Outfit,system-ui,sans-serif;padding-bottom:120px}
 main{max-width:560px;margin:0 auto;padding:0 18px}
@@ -15,7 +15,8 @@ header{text-align:center;padding:36px 0 18px}
 header small{font-size:1rem;color:var(--muted)}
 h1{font-family:Sacramento,cursive;font-weight:400;font-size:4.4rem;line-height:1;margin:0}
 header p{margin:8px 0 0;color:var(--muted)}
-h2{display:inline-block;background:var(--pink);padding:6px 18px;border-radius:99px;font-size:1.05rem;letter-spacing:.18em;margin:26px 0 10px}
+h2{display:inline-block;background:var(--pink);padding:6px 18px;border-radius:99px;font-size:1.05rem;letter-spacing:.18em;margin:26px 0 6px}
+.promo{margin:0 0 12px;color:var(--ok);font-weight:500;font-size:.95rem}
 .item{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin-bottom:8px}
 .item .n{flex:1}
 .item .n b{display:block;font-weight:500}
@@ -33,6 +34,7 @@ dialog::backdrop{background:#0008}
 dialog h3{font-family:Sacramento,cursive;font-weight:400;font-size:2.4rem;margin:0 0 10px}
 .lines{margin:0 0 14px;padding:0;list-style:none}
 .lines li{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px dashed var(--line)}
+.lines li.desc{color:var(--ok);font-weight:500}
 .total{display:flex;justify-content:space-between;font-weight:600;font-size:1.15rem;margin-bottom:6px}
 .aviso{font-size:.85rem;color:var(--muted);margin:0 0 8px}
 label{display:block;font-size:.9rem;color:var(--muted);margin:10px 0 4px}
@@ -84,9 +86,12 @@ footer{text-align:center;color:var(--muted);font-size:.85rem;padding:26px 0}
 <script>
 const WHATS = "5511962983072";
 
+// promo: a cada "qtd" unidades da categoria (sabores misturados), paga-se "preco"
 const MENU = [
-  {cat:"Trufas", item:"Trufa", items:[["Maracujá trufado",6],["Brigadeiro",6],["Prestígio",6],["Mousse de limão",6],["Surpresa de uva",6.5]]},
-  {cat:"Cones",  item:"Cone",  items:[["Maracujá trufado",10],["Chocolate",10],["Paçoca",10],["Ninho com Nutella",10],["Oreo",10]]}
+  {cat:"Trufas", tipo:"Trufa", promo:{qtd:3, preco:15},
+   items:[["Maracujá trufado",6],["Brigadeiro",6],["Prestígio",6],["Mousse de limão",6],["Surpresa de uva",6.5],["Oreo",6]]},
+  {cat:"Cones", tipo:"Cone", promo:{qtd:2, preco:18},
+   items:[["Maracujá trufado",10],["Brigadeiro",10],["Paçoca",10],["Ninho com Nutella",10],["Oreo",10],["Prestígio",10],["Ninho",10]]}
 ];
 
 const brl = v => v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
@@ -94,13 +99,19 @@ const cart = {};
 const flat = [];
 const menuEl = document.getElementById("menu");
 
-MENU.forEach(g=>{
+MENU.forEach((g,gi)=>{
   const h = document.createElement("h2");
   h.textContent = g.cat;
   menuEl.appendChild(h);
+
+  const p = document.createElement("p");
+  p.className = "promo";
+  p.id = "promo"+gi;
+  menuEl.appendChild(p);
+
   g.items.forEach(([name,price])=>{
     const id = flat.length;
-    flat.push({id,tipo:g.item,name,price});
+    flat.push({id, gi, tipo:g.tipo, name, price});
     const d = document.createElement("div");
     d.className = "item";
     d.innerHTML = `<div class="n"><b>${name}</b><span>${brl(price)}</span></div>
@@ -121,20 +132,55 @@ menuEl.addEventListener("click", e=>{
   render();
 });
 
+// Regra de negócio: aplica a promoção por categoria, misturando sabores.
+// Os grupos completos são formados pelas unidades de maior preço (mais vantajoso ao cliente).
+function calcular(){
+  let original = 0, total = 0, itens = 0;
+  const promos = [];
+  MENU.forEach((g,gi)=>{
+    const unidades = [];
+    flat.filter(i=>i.gi===gi).forEach(i=>{
+      for(let k=0;k<(cart[i.id]||0);k++) unidades.push(i.price);
+    });
+    unidades.sort((a,b)=>b-a);
+    const n = unidades.length;
+    const grupos = Math.floor(n / g.promo.qtd);
+    const emGrupo = unidades.slice(0, grupos*g.promo.qtd);
+    const resto = unidades.slice(grupos*g.promo.qtd);
+    const somaGrupo = emGrupo.reduce((a,b)=>a+b,0);
+    const somaResto = resto.reduce((a,b)=>a+b,0);
+    const subOriginal = somaGrupo + somaResto;
+    const subFinal = grupos*g.promo.preco + somaResto;
+    original += subOriginal;
+    total += subFinal;
+    itens += n;
+    if(grupos) promos.push({gi, grupos, economia: somaGrupo - grupos*g.promo.preco});
+  });
+  return {original, total, itens, promos};
+}
+
 function render(){
-  let n=0, t=0;
   flat.forEach(it=>{
     const q = cart[it.id]||0;
-    n += q; t += q*it.price;
     const o = document.getElementById("q"+it.id);
     o.textContent = q;
     o.hidden = !q;
     o.previousElementSibling.hidden = !q;
   });
-  const open = document.getElementById("open");
-  open.disabled = !n;
-  document.getElementById("count").textContent = n ? `Ver pedido (${n} ${n>1?"itens":"item"})` : "Escolha seus doces";
-  document.getElementById("sum").textContent = n ? brl(t) : "";
+
+  const r = calcular();
+
+  MENU.forEach((g,gi)=>{
+    const n = flat.filter(i=>i.gi===gi).reduce((a,i)=>a+(cart[i.id]||0),0);
+    const falta = (g.promo.qtd - n % g.promo.qtd) % g.promo.qtd;
+    const base = `Promoção: ${g.promo.qtd} por ${brl(g.promo.preco)} (sabores misturados)`;
+    document.getElementById("promo"+gi).textContent =
+      n && falta ? `${base}. Falta ${falta} para completar!` : base;
+  });
+
+  document.getElementById("open").disabled = !r.itens;
+  document.getElementById("count").textContent = r.itens ? `Ver pedido (${r.itens} ${r.itens>1?"itens":"item"})` : "Escolha seus doces";
+  document.getElementById("sum").textContent = r.itens ? brl(r.total) : "";
 }
 
 const dlg = document.getElementById("dlg");
@@ -142,18 +188,29 @@ const dlg = document.getElementById("dlg");
 document.getElementById("open").onclick = ()=>{
   const ul = document.getElementById("lines");
   ul.innerHTML = "";
-  let t = 0;
+  const r = calcular();
+
   flat.filter(i=>cart[i.id]).forEach(i=>{
-    const sub = cart[i.id]*i.price;
-    t += sub;
     const li = document.createElement("li");
     li.textContent = `${cart[i.id]}x ${i.name} (${i.tipo})`;
     const s = document.createElement("span");
-    s.textContent = brl(sub);
+    s.textContent = brl(cart[i.id]*i.price);
     li.appendChild(s);
     ul.appendChild(li);
   });
-  document.getElementById("total").textContent = brl(t);
+
+  r.promos.forEach(p=>{
+    const g = MENU[p.gi];
+    const li = document.createElement("li");
+    li.className = "desc";
+    li.textContent = `Promoção ${g.promo.qtd} ${g.cat.toLowerCase()} por ${brl(g.promo.preco)} (${p.grupos}x)`;
+    const s = document.createElement("span");
+    s.textContent = "−" + brl(p.economia);
+    li.appendChild(s);
+    ul.appendChild(li);
+  });
+
+  document.getElementById("total").textContent = brl(r.total);
   dlg.showModal();
 };
 
@@ -167,19 +224,21 @@ document.getElementById("send").onclick = ()=>{
   if(!nome.value.trim()) { nome.focus(); return; }
   if(!end.value.trim())  { end.focus();  return; }
 
-  let t = 0;
-  const linhas = flat.filter(i=>cart[i.id]).map(i=>{
-    const sub = cart[i.id]*i.price;
-    t += sub;
-    return `• ${cart[i.id]}x ${i.name} (${i.tipo}) – ${brl(sub)}`;
+  const r = calcular();
+  const linhas = flat.filter(i=>cart[i.id]).map(i=>
+    `• ${cart[i.id]}x ${i.name} (${i.tipo}) – ${brl(cart[i.id]*i.price)}`);
+
+  const descontos = r.promos.map(p=>{
+    const g = MENU[p.gi];
+    return `🎉 Promoção ${g.promo.qtd} ${g.cat.toLowerCase()} por ${brl(g.promo.preco)} (${p.grupos}x): −${brl(p.economia)}`;
   });
 
   const msg =
 `Olá, Doces Lira! Gostaria de fazer um pedido:
 
 ${linhas.join("\n")}
-
-*Total dos doces: ${brl(t)}* (frete a combinar)
+` + (descontos.length ? `\n${descontos.join("\n")}\n` : "") + `
+*Total dos doces: ${brl(r.total)}* (frete a combinar)
 
 Nome: ${nome.value.trim()}
 Entrega em: ${end.value.trim()}` + (obs ? `\nObservações: ${obs}` : "");
@@ -190,4 +249,4 @@ Entrega em: ${end.value.trim()}` + (obs ? `\nObservações: ${obs}` : "");
 render();
 </script>
 </body>
-  </html>
+</html>

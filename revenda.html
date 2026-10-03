@@ -15,6 +15,7 @@ header{text-align:center;padding:36px 0 18px}
 header small{font-size:1rem;color:var(--muted)}
 h1{font-family:Sacramento,cursive;font-weight:400;font-size:4.4rem;line-height:1;margin:0}
 header p{margin:8px 0 0;color:var(--muted)}
+.minimo{display:inline-block;margin-top:12px;background:var(--pink);padding:6px 16px;border-radius:99px;font-weight:600;font-size:.95rem}
 h2{display:inline-block;background:var(--pink);padding:6px 18px;border-radius:99px;font-size:1.05rem;letter-spacing:.18em;margin:26px 0 6px}
 .dica{margin:0 0 12px;color:var(--ok);font-weight:500;font-size:.95rem}
 .item{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin-bottom:8px}
@@ -54,13 +55,14 @@ footer{text-align:center;color:var(--muted);font-size:.85rem;padding:26px 0}
     <small>confeitaria</small>
     <h1>Doces Lira</h1>
     <p>Tabela de revenda. Monte seu pedido e envie pelo WhatsApp. Atendemos por entrega.</p>
+    <span class="minimo" id="minimoTxt"></span>
   </header>
   <div id="menu"></div>
   <footer>Pedidos: (11) 96298-3072</footer>
 </main>
 
 <div class="bar">
-  <button id="open" disabled><span id="count">Escolha seus doces</span><span id="sum"></span></button>
+  <button id="open" disabled><span id="count"></span><span id="sum"></span></button>
 </div>
 
 <dialog id="dlg">
@@ -87,12 +89,13 @@ footer{text-align:center;color:var(--muted);font-size:.85rem;padding:26px 0}
 
 <script>
 const WHATS = "5511962983072";
+const MINIMO = 10; // pedido mínimo (trufas + cones somados)
 
-// price = preço de revenda | venda = preço de venda sugerido
+// price = preço de revenda (pedido a partir de 10 unidades) | venda = preço de venda sugerido
 const MENU = [
-  {cat:"Trufas", tipo:"Trufa", price:4.5, venda:7.5,
+  {cat:"Trufas", tipo:"Trufa", price:5.5, venda:7.5,
    items:["Maracujá trufado","Brigadeiro","Prestígio","Mousse de limão","Surpresa de uva","Oreo"]},
-  {cat:"Cones", tipo:"Cone", price:10, venda:15,
+  {cat:"Cones", tipo:"Cone", price:7, venda:15,
    items:["Maracujá trufado","Brigadeiro","Paçoca","Ninho com Nutella","Oreo","Prestígio","Ninho"]}
 ];
 
@@ -100,6 +103,7 @@ const brl = v => v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
 const cart = {};
 const flat = [];
 const menuEl = document.getElementById("menu");
+document.getElementById("minimoTxt").textContent = `Pedido mínimo: ${MINIMO} unidades`;
 
 MENU.forEach(g=>{
   const h = document.createElement("h2");
@@ -144,8 +148,12 @@ function render(){
     o.hidden = !q;
     o.previousElementSibling.hidden = !q;
   });
-  document.getElementById("open").disabled = !n;
-  document.getElementById("count").textContent = n ? `Ver pedido (${n} ${n>1?"itens":"item"})` : "Escolha seus doces";
+  const ok = n >= MINIMO;
+  document.getElementById("open").disabled = !ok;
+  document.getElementById("count").textContent =
+    ok ? `Ver pedido (${n} itens)` :
+    n  ? `Faltam ${MINIMO-n} para o mínimo (${n}/${MINIMO})` :
+         `Mínimo de ${MINIMO} unidades`;
   document.getElementById("sum").textContent = n ? brl(t) : "";
 }
 
@@ -181,15 +189,16 @@ document.getElementById("send").onclick = ()=>{
   if(!nome.value.trim()) { nome.focus(); return; }
   if(!end.value.trim())  { end.focus();  return; }
 
-  let t = 0;
+  let t = 0, n = 0;
   const linhas = flat.filter(i=>cart[i.id]).map(i=>{
     const sub = cart[i.id]*i.price;
-    t += sub;
+    t += sub; n += cart[i.id];
     return `• ${cart[i.id]}x ${i.name} (${i.tipo}) – ${brl(sub)}`;
   });
+  if(n < MINIMO) return; // segurança: não envia abaixo do mínimo
 
   const msg =
-`Olá, Doces Lira! Gostaria de fazer um pedido de *REVENDA*:
+`Olá, Doces Lira! Gostaria de fazer um pedido de *REVENDA* (${n} unidades):
 
 ${linhas.join("\n")}
 
